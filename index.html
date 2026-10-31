@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3D 자동차 제동 거리 물리학 시뮬레이터</title>
+<style>
+:root{--bg:#0a1325;--p:#111d35;--l:#22345a;--t:#e6eefc;--m:#8fa3c7;--c:#22d3c5;--b:#3b82f6;--y:#facc15;--r:#ef4444}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px/1.45 system-ui,"Malgun Gothic",sans-serif}
+header{padding:10px 16px;border-bottom:1px solid var(--l)}h1{font-size:18px;margin:0;color:var(--c)}header small,small{color:var(--m)}
+main{display:grid;grid-template-columns:270px minmax(0,1fr) 280px;gap:10px;padding:10px}.wide{grid-column:1/-1}
+.card{background:var(--p);border:1px solid var(--l);border-radius:8px;padding:10px}h2{font-size:14px;margin:0 0 8px;color:var(--c)}
+.row{margin-bottom:8px}.row label{display:block;color:var(--m);font-size:12px}.row input[type=number]{width:100%;background:#0a1325;color:var(--t);border:1px solid var(--l);border-radius:4px;padding:3px 6px}.row input[type=range]{width:100%;accent-color:var(--c)}
+.ck{display:block;margin:4px 0}button{background:#16315c;color:var(--t);border:1px solid var(--b);border-radius:5px;padding:6px 10px;cursor:pointer;font:inherit}button:hover{background:var(--b)}
+button.go{background:var(--c);color:#04201e;border-color:var(--c);font-weight:700}button.stop{background:#7f1d1d;border-color:var(--r)}
+.bt{display:flex;flex-wrap:wrap;gap:4px}.bt button{padding:3px 7px;font-size:12px}
+#view{position:relative;height:min(62vh,560px);min-height:380px}#cv{width:100%;height:100%;display:block;border-radius:8px 8px 0 0}
+#hud{position:absolute;left:10px;top:10px;background:#0a1325d9;border:1px solid var(--l);padding:8px 10px;border-radius:6px;pointer-events:none}
+#hud .sp{font-size:26px;font-weight:700;color:var(--c)}#hud span.on{background:var(--c);color:#04201e;border-radius:3px;padding:0 5px;font-weight:700}#hud span{margin-right:4px;color:var(--m)}
+#bar{display:flex;flex-wrap:wrap;gap:6px;padding:8px}
+.d{display:flex;justify-content:space-between;border-bottom:1px solid var(--l);padding:2px 0}.d b{color:var(--c);font-variant-numeric:tabular-nums}.d i{color:var(--m);font-style:normal;width:46px;text-align:right}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid var(--l);padding:3px 5px;text-align:right}th{background:#16315c}
+.g4{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px}.g4 canvas{width:100%;height:250px;background:#0d182d;border-radius:6px}
+.sc{overflow-x:auto}#expTxt{margin:8px 0;color:var(--y)}
+@media(max-width:1000px){main{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>3D 자동차 제동 거리 물리학 시뮬레이터</h1><small>역학과 에너지 탐구 활동용 · Three.js를 CDN에서 불러오므로 인터넷 연결이 필요합니다.</small></header>
+<main>
+<section class="card"><h2>실험 조건</h2><div id="ctrl"></div>
+<div class="row"><label>마찰계수 프리셋 (예시 가정값)</label><div class="bt"><button data-mu="0.8">마른 도로 0.8</button><button data-mu="0.5">젖은 도로 0.5</button><button data-mu="0.3">미끄러운 도로 0.3</button></div></div>
+<label class="ck"><input type="checkbox" id="auto" checked> 자동 제동 (반응 시간 후)</label>
+<label class="ck"><input type="checkbox" id="trail" checked> 제동 흔적 표시</label>
+<small>※ 실험 중 바꾼 조건은 다음 실험부터 적용됩니다. 수평 도로 모델에서 감속도 a=μg는 질량과 무관합니다.</small></section>
+<section class="card" style="padding:0"><div id="view"><canvas id="cv"></canvas><div id="hud"></div></div>
+<div id="bar"><button class="go" id="start">실험 시작</button><button id="pause">일시정지</button><button class="stop" id="brake">브레이크 (Space)</button><button id="reset">초기화</button><button id="cam">카메라 초기화</button><button id="csv">CSV 저장</button></div></section>
+<section><div class="card"><h2>실시간 대시보드</h2><div id="dash"></div></div><div class="card" id="cmp" style="margin-top:10px;display:none"></div></section>
+<section class="card wide"><h2>그래프</h2><div class="g4"><canvas id="g1"></canvas><canvas id="g2"></canvas><canvas id="g3"></canvas><canvas id="g4"></canvas></div></section>
+<section class="card wide"><h2>탐구 실험 및 기록표</h2>
+<div class="bt"><button data-e="0">실험 1: 초기 속도 (30·60·90·120 km/h)</button><button data-e="1">실험 2: 마찰계수 (0.8·0.6·0.4·0.2)</button><button data-e="2">실험 3: 반응 시간 (0.5·1·1.5·2 s)</button><button id="clr" class="stop">전체 기록 초기화</button></div>
+<div id="expTxt">실험 버튼은 현재 조건에서 한 변수만 바꿔 자동으로 기록합니다. 직접 실행한 실험도 정지 후 자동 기록됩니다.</div>
+<div class="sc"><table><thead><tr><th>번호</th><th>초기 속도(km/h)</th><th>반응 시간(s)</th><th>마찰계수</th><th>질량(kg)</th><th>반응 거리(m)</th><th>제동 거리(m)</th><th>전체 정지 거리(m)</th><th>제동 시간(s)</th><th>전체 정지 시간(s)</th><th>삭제</th></tr></thead><tbody id="tb"></tbody></table></div></section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const $=i=>document.getElementById(i),fx=(v,d=2)=>Number(v).toFixed(d);
+if(typeof THREE==='undefined'){document.body.insertAdjacentHTML('afterbegin','<p style="padding:16px;color:#facc15">Three.js를 불러오지 못했습니다. 인터넷 연결을 확인하세요.</p>');throw 0}
+
+/* ===== 물리 계산 엔진 (3D 렌더링과 독립) ===== */
+const STEP=1/240;
+const Phys={
+ theory(p){const v0=p.v/3.6,a=Math.max(p.mu,.01)*p.g,dr=v0*p.tr,db=v0*v0/(2*a);
+  return{v0,a,dr,db,ds:dr+db,tb:v0/a,ts:p.tr+v0/a,F:p.m*a,Ek:.5*p.m*v0*v0}},
+ step(s,h){ // 고정 시간 간격 수치 적분
+  if(s.stopped)return;
+  if(s.xH===null&&s.t>=s.tH-1e-9)s.xH=s.x;
+  if(s.tB===null&&s.auto&&s.t>=s.tH+s.p.tr-1e-6){s.tB=s.t;s.xB=s.x}
+  if(s.tB===null){s.x+=s.v*h;s.t+=h;return}
+  const vn=s.v-s.a*h;
+  if(vn<=0){const dt=s.v/s.a;s.x+=s.v*dt/2;s.t+=dt;s.v=0;s.stopped=true;s.tS=s.t}
+  else{s.x+=(s.v+vn)/2*h;s.v=vn;s.t+=h}
+ },
+ phase(s){if(!s.run)return'대기';if(s.stopped)return'정지';if(s.tB!==null)return'제동';return s.xH===null?'주행':'반응'}
+};
+const newS=(p,run,auto=true)=>({p:{...p},run,auto,t:0,x:0,v:run?p.v/3.6:0,a:Math.max(p.mu,.01)*p.g,tH:1,xH:null,tB:null,xB:null,stopped:false,tS:null,saved:false});
+const measure=s=>({v:s.p.v,tr:s.p.tr,mu:s.p.mu,m:s.p.m,dr:s.xB-s.xH,db:s.x-s.xB,ds:s.x-s.xH,tb:s.tS-s.tB,ts:s.tS-s.tH});
+const vc={};
+function vrun(p){const k=[p.v,p.tr,p.mu,p.m,p.g].join();if(vc[k])return vc[k];const s=newS(p,true),h=[];let n=0;
+ while(!s.stopped&&n<600000){Phys.step(s,STEP);if(n++%12===0)h.push([s.t,s.v,s.x,Phys.phase(s)])}
+ h.push([s.t,0,s.x,'정지'],[s.t+1,0,s.x,'정지']);return vc[k]={s,h}}
+
+/* ===== 조건 입력 ===== */
+const defs=[['v','초기 속도','km/h',10,200,1,60],['tr','운전자 반응 시간','s',.2,2,.1,1],['mu','도로 마찰계수 μ','',.2,1,.05,.7],['m','자동차 질량','kg',800,3000,50,1500],['g','중력가속도','m/s²',5,20,.01,9.81]];
+const P={},SET={};
+defs.forEach(([k,n,u,lo,hi,st,df])=>{P[k]=df;const d=document.createElement('div');d.className='row';
+ d.innerHTML=`<label>${n}${u?' ('+u+')':''}</label><input type="number" id="n_${k}" min="${lo}" max="${hi}" step="${st}" value="${df}"><input type="range" id="r_${k}" min="${lo}" max="${hi}" step="${st}" value="${df}">`;$('ctrl').appendChild(d);
+ const set=v=>{v=parseFloat(v);if(isNaN(v))return;v=Math.min(hi,Math.max(lo,v));P[k]=v;$('r_'+k).value=v;if(document.activeElement!==$('n_'+k))$('n_'+k).value=v;onParam()};
+ SET[k]=set;$('r_'+k).oninput=e=>set(e.target.value);$('n_'+k).oninput=e=>set(e.target.value);$('n_'+k).onchange=e=>{set(e.target.value);e.target.value=P[k]}});
+document.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>SET.mu(b.dataset.mu));
+
+/* ===== 3D 장면 ===== */
+const view=$('view'),R3=new THREE.WebGLRenderer({canvas:$('cv'),antialias:true,logarithmicDepthBuffer:true}),scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0e1a33);
+const camera=new THREE.PerspectiveCamera(45,1,.1,6000),ctl=new THREE.OrbitControls(camera,$('cv'));
+ctl.enablePan=false;ctl.maxPolarAngle=Math.PI*.49;ctl.minDistance=5;ctl.maxDistance=2000;
+function camReset(x=0){ctl.target.set(x,.8,1.75);camera.position.set(x-9,4.5,14.75);ctl.update()}camReset();
+scene.add(new THREE.HemisphereLight(0xcfe3ff,0x20301f,.95));const sun=new THREE.DirectionalLight(0xffffff,.8);sun.position.set(50,100,60);scene.add(sun);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshLambertMaterial({color:0x1d3a2b}));ground.rotation.x=-Math.PI/2;ground.scale.set(8000,8000,1);ground.position.y=-.2;scene.add(ground);
+const rc=document.createElement('canvas');rc.width=128;rc.height=128;const rg=rc.getContext('2d');rg.scale(1.28,128/120);
+rg.fillStyle='#2a2f3a';rg.fillRect(0,0,100,120);rg.fillStyle='#3d4452';rg.fillRect(0,0,100,25);rg.fillRect(0,95,100,25);
+rg.fillStyle='#e5e7eb';rg.fillRect(0,24,100,3);rg.fillRect(0,93,100,3);rg.fillStyle='#facc15';rg.fillRect(0,59,45,3);rg.fillStyle='rgba(255,255,255,.35)';rg.fillRect(0,25,2,70);
+const rt=new THREE.CanvasTexture(rc);rt.wrapS=THREE.RepeatWrapping;rt.anisotropy=R3.capabilities.getMaxAnisotropy();
+const road=new THREE.Mesh(new THREE.PlaneGeometry(1,12),new THREE.MeshLambertMaterial({map:rt}));road.rotation.x=-Math.PI/2;scene.add(road);
+let roadEnd=0;function ensureRoad(e){if(e<=roadEnd)return;roadEnd=e+100;const L=roadEnd+40;road.scale.x=L;road.position.x=-40+L/2;rt.repeat.set(L/10,1)}
+/* 배경: 고층 건물(2열)과 가로수. 40 m 슬롯 번호로 위치·크기를 고정해 재배치 시 튀지 않음 */
+const hsh=x=>{const v=Math.sin(x*127.1+311.7)*43758.5453;return v-Math.floor(v)},NS=34,SP=40;
+const wc=document.createElement('canvas');wc.width=wc.height=64;const wx=wc.getContext('2d');wx.fillStyle='#16233d';wx.fillRect(0,0,64,64);
+for(let i=0;i<4;i++)for(let j=0;j<4;j++){wx.fillStyle=(i*7+j*3)%5===0?'#ffd76a':'#3a5a8c';wx.fillRect(i*16+3,j*16+3,10,10)}
+const wt=new THREE.CanvasTexture(wc);wt.wrapS=wt.wrapT=THREE.RepeatWrapping;wt.anisotropy=R3.capabilities.getMaxAnisotropy();
+const bm=[0xffffff,0xb8c8ee,0xd6c9f0,0xf2dcc4].map(c=>new THREE.MeshLambertMaterial({map:wt,color:c}));
+const mkPool=f=>Array.from({length:NS},()=>{const o=f();o.userData.s=null;scene.add(o);return o});
+const bld=[0,1].map(()=>mkPool(()=>new THREE.Mesh(new THREE.BoxGeometry(1,1,1),bm[0])));
+const tre=mkPool(()=>{const g=new THREE.Group(),tk=new THREE.Mesh(new THREE.CylinderGeometry(.3,.3,1.5),new THREE.MeshLambertMaterial({color:0x5b3a1e})),cn=new THREE.Mesh(new THREE.ConeGeometry(2,5,8),new THREE.MeshLambertMaterial({color:0x1f6b3d}));tk.position.y=.75;cn.position.y=4;g.add(tk,cn);return g});
+function placeB(m,s,row){const r=k=>hsh(s*13+row*7+k),w=(row?16:12)+r(1)*(row?18:14),hg=(row?50:30)+r(2)*(row?90:70),d=14+r(3)*8;
+ m.geometry.dispose();const g=new THREE.BoxGeometry(w,hg,d),uv=g.attributes.uv;
+ for(let i=0;i<24;i++){const f=i>>2,sx=f<2?d:f>3?w:0,sy=f>1&&f<4?0:hg;uv.setXY(i,uv.getX(i)*sx/8,uv.getY(i)*sy/8)} // 창문 무늬가 크기에 맞게 반복
+ uv.needsUpdate=true;m.geometry=g;m.material=bm[Math.floor(r(4)*4)];m.position.set(s*SP+(row?20:0)+(r(5)-.5)*8,hg/2,-(row?75:30)-d/2-r(6)*12)}
+function layout(b){for(let s=b-6;s<b-6+NS;s++){const i=((s%NS)+NS)%NS;
+ bld.forEach((p,row)=>{if(p[i].userData.s!==s){p[i].userData.s=s;placeB(p[i],s,row)}});
+ if(tre[i].userData.s!==s){tre[i].userData.s=s;tre[i].position.set(s*SP+hsh(s*17+4)*30,0,(hsh(s*17+5)>.5?1:-1)*(10+hsh(s*17+6)*9))}}}
+let tb0=null;
+/* 자동차 모델 (모델 파일 없이 기본 도형 조합) */
+const car=new THREE.Group(),wheels=[];scene.add(car);
+const MT=(c,e=0)=>new THREE.MeshStandardMaterial({color:c,emissive:e,roughness:.5});
+const part=(geo,mat,x,y,z)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);car.add(m);return m};
+part(new THREE.BoxGeometry(4.4,.7,1.8),MT(0x2563eb),0,.65,0);part(new THREE.BoxGeometry(2.2,.65,1.6),MT(0x1e40af),-.2,1.3,0);part(new THREE.BoxGeometry(2,.4,1.64),MT(0x0b1220),-.2,1.32,0);
+const tail=MT(0x550000,0x330000),wg=new THREE.CylinderGeometry(.36,.36,.28,16).rotateX(Math.PI/2),wm=MT(0x111111);
+[-.6,.6].forEach(z=>{part(new THREE.BoxGeometry(.1,.2,.4),MT(0xfff3a0,0xffe066),2.2,.7,z);part(new THREE.BoxGeometry(.1,.2,.4),tail,-2.2,.7,z)});
+[[-1.4,-.9],[-1.4,.9],[1.4,-.9],[1.4,.9]].forEach(([x,z])=>wheels.push(part(wg,wm,x,.36,z)));
+car.position.z=1.75;
+/* 표지·막대·라벨·타이어 흔적 */
+const labels=[],v3=new THREE.Vector3();
+function label(col){const c=document.createElement('canvas');c.width=320;c.height=80;const t=new THREE.CanvasTexture(c),s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false}));s.userData={c,t,col,txt:''};s.renderOrder=9;labels.push(s);scene.add(s);return s}
+function setLabel(s,txt){if(s.userData.txt===txt)return;s.userData.txt=txt;const g=s.userData.c.getContext('2d');g.clearRect(0,0,320,80);g.fillStyle='rgba(10,19,37,.88)';g.fillRect(0,0,320,80);g.strokeStyle=s.userData.col;g.lineWidth=5;g.strokeRect(0,0,320,80);g.fillStyle='#fff';g.font='bold 34px sans-serif';g.textAlign='center';g.fillText(txt,160,52);s.userData.t.needsUpdate=true}
+const BM=c=>new THREE.MeshBasicMaterial({color:c});
+function marker(col,txt){const g=new THREE.Group(),b=new THREE.Mesh(new THREE.BoxGeometry(.4,.04,12),BM(col)),p=new THREE.Mesh(new THREE.CylinderGeometry(.08,.08,4),BM(col));b.position.y=.08;p.position.set(0,2,6.5);g.add(b,p);const l=label(col);l.position.set(0,5,6.5);setLabel(l,txt);g.add(l);g.visible=false;scene.add(g);return{g,l}}
+const mH=marker('#facc15','위험 인지'),mB=marker('#fb923c','제동 시작'),mS=marker('#ef4444','정지');
+function barObj(col){const b=new THREE.Mesh(new THREE.BoxGeometry(1,.05,.6),BM(col));b.position.set(0,.1,4.8);b.visible=false;scene.add(b);const l=label('#'+col.toString(16).padStart(6,'0'));l.position.set(0,1.8,4.8);l.visible=false;return{b,l}}
+const bR=barObj(0xfacc15),bB=barObj(0xef4444);
+const marks=[.85,2.65].map(z=>{const m=new THREE.Mesh(new THREE.BoxGeometry(1,.03,.2),BM(0x05070c));m.position.set(0,.07,z);m.visible=false;scene.add(m);return m});
+/* 정지 지점 마네킹 */
+const man=new THREE.Group(),MW=MT(0xf2f2f2),MV=MT(0xfb923c,0x331500),mL=label('#22d3c5');scene.add(man);
+const mp=(geo,x,y,z,mat)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);man.add(m)};
+mp(new THREE.SphereGeometry(.12,16,12),0,1.68,0,MW);mp(new THREE.BoxGeometry(.22,.6,.4),0,1.2,0,MV);
+mp(new THREE.CylinderGeometry(.04,.04,.6),0,1.2,.26,MW);mp(new THREE.CylinderGeometry(.04,.04,.6),0,1.2,-.26,MW);
+mp(new THREE.CylinderGeometry(.07,.06,.85),0,.43,.1,MW);mp(new THREE.CylinderGeometry(.07,.06,.85),0,.43,-.1,MW);
+mp(new THREE.CylinderGeometry(.3,.3,.03,20),0,.02,0,MT(0x333a4a));
+function bar(o,x0,x1,txt){const L=x1-x0,on=L>.01;o.b.visible=o.l.visible=on;if(!on)return;o.b.scale.x=L;o.b.position.x=o.l.position.x=x0+L/2;setLabel(o.l,txt)}
+
+/* ===== 상태 ===== */
+let S=newS(P,false),hist=[],paused=false,prevX=0,last=performance.now(),acc=0,hT=0,gT=0;
+const pp=()=>S.run?S.p:P;
+function predStop(){const p=pp(),th=Phys.theory(p);if(S.tB!==null)return S.xB+th.db;return S.auto||!S.run?th.v0*(S.tH+p.tr)+th.db:S.x+th.db}
+function sync3D(){
+ car.position.x=S.x;wheels.forEach(w=>w.rotation.z-=(S.x-prevX)/.36);prevX=S.x;
+ const br=S.tB!==null;tail.color.setHex(br?0xff2222:0x550000);tail.emissive.setHex(br?0xff1111:0x330000);
+ mH.g.visible=S.xH!==null;mH.g.position.x=S.xH||0;mB.g.visible=br;mB.g.position.x=S.xB||0;mS.g.visible=S.stopped;mS.g.position.x=S.x;
+ if(S.stopped)setLabel(mS.l,'정지 '+fx(S.x-S.xH,1)+' m');
+ if(S.xH!==null){const e=br?S.xB:S.x;bar(bR,S.xH,e,'반응 '+fx(e-S.xH,1)+' m')}else bR.b.visible=bR.l.visible=false;
+ if(br)bar(bB,S.xB,S.x,'제동 '+fx(S.x-S.xB,1)+' m');else bB.b.visible=bB.l.visible=false;
+ const tr=$('trail').checked&&br;marks.forEach(m=>{m.visible=tr;if(tr){const L=Math.max(S.x-S.xB,.001);m.scale.x=L;m.position.x=S.xB+L/2}});
+ const base=Math.floor(S.x/SP);if(base!==tb0){tb0=base;layout(base)}
+ const mx=predStop()+2.6,mv=S.tB!==null||S.auto||!S.run; // 정지 시 앞범퍼(차 중심+2.2 m) 바로 앞에 마네킹
+ man.visible=mL.visible=mv;man.position.set(mx,0,1.75);mL.position.set(mx,2.4,1.75);setLabel(mL,S.stopped?'딱 여기서 정지!':'정지 예상 지점');
+ ground.position.x=S.x;
+}
+function camTick(){
+ const dx=S.x-ctl.target.x;ctl.target.x=S.x;camera.position.x+=dx; // 시점을 자동차에 고정 (회전·확대는 자동차 기준)
+ ctl.update();labels.forEach(s=>{const k=camera.position.distanceTo(s.getWorldPosition(v3))*.05;s.scale.set(k*4,k,1)});
+}
+function size(){const w=view.clientWidth,h=view.clientHeight;R3.setPixelRatio(Math.min(2,devicePixelRatio||1));R3.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+
+/* ===== 대시보드 ===== */
+const F=[['v0k','초기 속도','km/h'],['vk','현재 속도','km/h'],['vm','현재 속도','m/s'],['tr','반응 시간','s'],['dr','반응 거리','m'],['db','제동 거리','m'],['ds','전체 정지 거리','m'],['a','현재 감속도','m/s²'],['F','제동력','N'],['m','자동차 질량','kg'],['Ek','현재 운동에너지','J'],['tb','제동 후 경과 시간','s'],['ts','전체 정지까지 시간','s']];
+$('dash').innerHTML=F.map(f=>`<div class="d"><span>${f[1]}</span><b id="d_${f[0]}">0</b><i>${f[2]}</i></div>`).join('');
+const sd=(k,v,d=2)=>$('d_'+k).textContent=fx(v,d);
+function updDash(){
+ const p=pp(),th=Phys.theory(p),r=S.run,br=S.tB!==null&&!S.stopped;let dr=th.dr,db=th.db,ds=th.ds,tb=0,ts=0;
+ if(r){dr=S.xH===null?0:(S.tB!==null?S.xB:S.x)-S.xH;db=S.tB!==null?S.x-S.xB:0;ds=S.xH===null?0:S.x-S.xH;tb=S.tB!==null?S.t-S.tB:0;ts=S.xH===null?0:S.t-S.tH}
+ sd('v0k',p.v,1);sd('vk',S.v*3.6,1);sd('vm',S.v);sd('tr',p.tr,2);sd('dr',dr);sd('db',db);sd('ds',ds);sd('a',br?-th.a:0);sd('F',br?th.F:0,0);sd('m',p.m,0);sd('Ek',.5*p.m*S.v*S.v,0);sd('tb',tb);sd('ts',ts);
+ const ph=Phys.phase(S);$('hud').innerHTML=['대기','주행','반응','제동','정지'].map(s=>`<span class="${s===ph?'on':''}">${s}</span>`).join('')+`<div class="sp">${fx(S.v*3.6,1)} km/h</div>`+(br?'정지까지 남은 거리 '+fx(Math.max(0,S.xB+th.db-S.x),1)+' m':ph==='정지'?'정지 거리 '+fx(ds,2)+' m':'조건 '+fx(p.v,0)+' km/h · μ='+p.mu);
+}
+
+/* ===== 그래프 ===== */
+const PC={'주행':'#60a5fa','반응':'#facc15','제동':'#ef4444','정지':'#94a3b8'};
+function chart(cv,title,xl,yl,ser,ext,mark){
+ const d=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;cv.width=W*d;cv.height=H*d;const g=cv.getContext('2d');g.scale(d,d);
+ let xm=ext?ext[0]:0,ym=ext?ext[1]:0;if(!ext)ser.forEach(s=>s.pts.forEach(p=>{xm=Math.max(xm,p[0]);ym=Math.max(ym,p[1])}));xm=xm||1;ym=ym||1;
+ const L=54,T=40,B=34,w=W-L-12,h=H-T-B,X=x=>L+x/xm*w,Y=y=>T+h-y/ym*h;
+ g.font='11px sans-serif';g.strokeStyle='#22345a';g.lineWidth=1;
+ for(let i=0;i<=5;i++){const gx=L+w*i/5,gy=T+h*i/5;g.beginPath();g.moveTo(gx,T);g.lineTo(gx,T+h);g.moveTo(L,gy);g.lineTo(L+w,gy);g.stroke();g.fillStyle='#8fa3c7';g.textAlign='center';g.fillText(fx(xm*i/5,xm<10?1:0),gx,T+h+14);g.textAlign='right';g.fillText(fx(ym*(5-i)/5,ym<10?1:0),L-5,gy+4)}
+ g.textAlign='center';g.fillStyle='#e6eefc';g.font='bold 12px sans-serif';g.fillText(title,W/2,14);g.font='11px sans-serif';g.fillText(xl,L+w/2,H-5);g.save();g.translate(11,T+h/2);g.rotate(-Math.PI/2);g.fillText(yl,0,0);g.restore();
+ let lx=L;g.textAlign='left';
+ ser.forEach(s=>{g.strokeStyle=g.fillStyle=s.c;g.lineWidth=2;g.beginPath();s.pts.forEach((p,j)=>j?g.lineTo(X(p[0]),Y(p[1])):g.moveTo(X(p[0]),Y(p[1])));g.stroke();g.fillRect(lx,25,10,4);g.fillStyle='#e6eefc';g.fillText(s.n,lx+14,30);lx+=g.measureText(s.n).width+30});
+ if(mark){g.fillStyle='#fff';g.beginPath();g.arc(X(mark[0]),Y(mark[1]),4,0,7);g.fill()}
+}
+function phSeries(h,i){const o={},order=[];let prev=null;for(const q of h){const k=q[3];if(!o[k]){o[k]=prev?[prev]:[];order.push(k)}o[k].push(q);prev=q}return order.map(k=>({n:k,c:PC[k],pts:o[k].map(q=>[q[0],q[i]])}))}
+function drawG12(){
+ const vr=vrun(pp()),lh=vr.h[vr.h.length-1],h=S.run?hist:vr.h,th=Phys.theory(pp());
+ chart($('g1'),'속도-시간 그래프','시간 t (s)','속도 v (m/s)',phSeries(h,1),[lh[0],th.v0*1.05]);
+ chart($('g2'),'거리-시간 그래프','시간 t (s)','누적 이동 거리 x (m)',phSeries(h,2),[lh[0],lh[2]*1.05]);
+}
+function drawG34(){
+ const mk=(vals,key,fn)=>{const a=[],b=[],c=[];vals.forEach(x=>{const t=Phys.theory({...P,[key]:x});a.push([x,t.dr]);b.push([x,t.db]);c.push([x,t.ds])});
+  return[{n:'반응 거리',c:PC['반응'],pts:a},{n:'제동 거리',c:PC['제동'],pts:b},{n:'전체 정지 거리',c:'#22d3c5',pts:c}]},th=Phys.theory(P);
+ const vs=[],ms=[];for(let v=10;v<=200;v+=10)vs.push(v);for(let m=.2;m<=1.001;m+=.05)ms.push(+m.toFixed(2));
+ chart($('g3'),'초기 속도와 거리 (현재 μ·반응 시간 기준)','초기 속도 (km/h)','거리 (m)',mk(vs,'v'),null,[P.v,th.ds]);
+ chart($('g4'),'마찰계수와 거리 (현재 속도·반응 시간 기준)','마찰계수 μ (단위 없음)','거리 (m)',mk(ms,'mu'),null,[P.mu,th.ds]);
+}
+const drawAll=()=>{drawG12();drawG34()};
+
+/* ===== 기록 · CSV ===== */
+let REC=[],cnt=0;
+function renderTable(){$('tb').innerHTML=REC.map((r,i)=>`<tr><td>${r.n}</td><td>${r.v}</td><td>${r.tr}</td><td>${r.mu}</td><td>${r.m}</td><td>${fx(r.dr)}</td><td>${fx(r.db)}</td><td>${fx(r.ds)}</td><td>${fx(r.tb)}</td><td>${fx(r.ts)}</td><td><button data-i="${i}">삭제</button></td></tr>`).join('')||'<tr><td colspan="11" style="text-align:center">기록이 없습니다.</td></tr>'}
+const addRec=r=>{r.n=++cnt;REC.push(r);renderTable()};
+$('tb').onclick=e=>{const i=e.target.dataset.i;if(i!==undefined){REC.splice(+i,1);renderTable()}};
+$('clr').onclick=()=>{if(confirm('모든 실험 기록을 삭제할까요?')){REC=[];cnt=0;renderTable()}};
+$('csv').onclick=()=>{if(!REC.length){alert('저장할 기록이 없습니다. 실험을 먼저 실행하세요.');return}
+ const hd='실험 번호,초기 속도(km/h),반응 시간(s),마찰계수,자동차 질량(kg),반응 거리(m),제동 거리(m),전체 정지 거리(m),제동 시간(s),전체 정지 시간(s)';
+ const rows=REC.map(r=>[r.n,r.v,r.tr,r.mu,r.m,fx(r.dr,3),fx(r.db,3),fx(r.ds,3),fx(r.tb,3),fx(r.ts,3)].join(','));
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+hd+'\n'+rows.join('\n')],{type:'text/csv'}));a.download='braking_experiments.csv';a.click()};
+const EXP=[{n:'실험 1: 초기 속도와 정지 거리',k:'v',l:'초기 속도',vals:[30,60,90,120],q:'초기 속도가 2배가 되면 제동 거리는 어떻게 달라질까?'},
+ {n:'실험 2: 마찰계수와 제동 거리',k:'mu',l:'마찰계수',vals:[.8,.6,.4,.2],q:'마찰계수가 감소하면 제동 거리는 어떻게 달라질까?'},
+ {n:'실험 3: 반응 시간과 전체 정지 거리',k:'tr',l:'반응 시간',vals:[.5,1,1.5,2],q:'반응 시간이 길어지면 전체 정지 거리 중 어느 부분이 증가할까?'}];
+document.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{const e=EXP[b.dataset.e],o=e.vals.map(x=>{const r=measure(vrun({...P,[e.k]:x}).s);addRec(r);return r}),f=o[0],l=o[o.length-1],q=(a,b)=>fx(b/a,2);
+ $('expTxt').innerHTML=`<b>${e.n}</b> — 탐구 질문: ${e.q}<br>결과: ${e.l} ${f[e.k]}→${l[e.k]} (×${q(f[e.k],l[e.k])}) 일 때 반응 거리 ×${q(f.dr,l.dr)}, 제동 거리 ×${q(f.db,l.db)}, 전체 정지 거리 ×${q(f.ds,l.ds)}`});
+
+/* ===== 제어 ===== */
+function clear3D(){[mH,mB,mS].forEach(m=>m.g.visible=false);[bR,bB].forEach(o=>o.b.visible=o.l.visible=false);marks.forEach(m=>m.visible=false);car.position.x=0;prevX=0;tail.color.setHex(0x550000);tail.emissive.setHex(0x330000)}
+function start(){S=newS(P,true,$('auto').checked);hist=[];hT=-1;acc=0;paused=false;$('pause').textContent='일시정지';$('cmp').style.display='none';clear3D();ensureRoad(predStop()+60);drawAll()}
+function reset(){S=newS(P,false);hist=[];paused=false;$('pause').textContent='일시정지';$('cmp').style.display='none';clear3D();camReset();drawAll()}
+function brake(){if(S.run&&!S.stopped&&!paused&&S.tB===null){if(S.xH===null){S.xH=S.x;S.tH=S.t}S.tB=S.t;S.xB=S.x}}
+function finish(){S.saved=true;hist.push([S.t+1,0,S.x,'정지']);const m=measure(S),th=Phys.theory(S.p);addRec(m);
+ $('cmp').style.display='block';$('cmp').innerHTML='<h2>이론값 vs 시뮬레이션</h2><table><tr><th>항목</th><th>이론</th><th>시뮬레이션</th></tr>'+[['반응 거리 (m)',th.dr,m.dr],['제동 거리 (m)',th.db,m.db],['전체 정지 거리 (m)',th.ds,m.ds],['제동 시간 (s)',th.tb,m.tb]].map(a=>`<tr><td style="text-align:left">${a[0]}</td><td>${fx(a[1],3)}</td><td>${fx(a[2],3)}</td></tr>`).join('')+'</table><small>시뮬레이션은 1/240 s 간격 수치 적분입니다. 직접 브레이크를 누르면 반응 거리가 이론과 달라집니다.</small>';drawG12()}
+function onParam(){if(!S.run)ensureRoad(predStop()+60);updDash();drawAll()}
+$('start').onclick=start;$('reset').onclick=reset;$('brake').onclick=brake;$('cam').onclick=()=>camReset(S.x);
+$('pause').onclick=()=>{if(!S.run||S.stopped)return;paused=!paused;$('pause').textContent=paused?'계속하기':'일시정지'};
+addEventListener('keydown',e=>{if(e.code==='Space'&&!/INPUT|BUTTON/.test(document.activeElement.tagName)){e.preventDefault();brake()}});
+addEventListener('resize',()=>{size();drawAll()});
+
+function loop(now){
+ const dt=Math.min(.1,(now-last)/1000);last=now; // 실제 경과 시간 기반 (일시정지 후에도 시간 점프 없음)
+ if(S.run&&!S.stopped&&!paused){acc+=dt;while(acc>=STEP&&!S.stopped){Phys.step(S,STEP);acc-=STEP}
+  if(S.t-hT>=.05||S.stopped){hist.push([S.t,S.v,S.x,Phys.phase(S)]);hT=S.t}
+  ensureRoad(Math.max(S.x+300,predStop()+60));if(S.stopped&&!S.saved)finish();else if(now-gT>120){gT=now;drawG12()}}
+ sync3D();camTick();updDash();R3.render(scene,camera);requestAnimationFrame(loop)}
+size();renderTable();ensureRoad(predStop()+60);drawAll();requestAnimationFrame(loop);
+</script></body></html>
